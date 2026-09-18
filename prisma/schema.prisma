@@ -11,3 +11,428 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum EstadoCuenta {
+  ACTIVA
+  INACTIVA
+}
+
+model Rol {
+  idRol       Int      @id @default(autoincrement())
+  nombre      String   @unique
+  descripcion String?
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+
+  usuarios Usuario[]
+}
+
+model Usuario {
+  idUsuario           Int          @id @default(autoincrement())
+  idRol               Int
+  nombre              String
+  apellido            String
+  correo              String       @unique
+  passwordHash        String
+  estadoCuenta        EstadoCuenta @default(ACTIVA)
+  intentosFallidos    Int          @default(0)
+  debeCambiarPassword Boolean      @default(false)
+  passwordCambiadoEn  DateTime?
+  ultimoAcceso        DateTime?
+  creadoEn            DateTime     @default(now())
+  actualizadoEn       DateTime     @updatedAt
+
+  rol                   Rol                    @relation(fields: [idRol], references: [idRol])
+  movimientosInventario MovimientoInventario[]
+  abastecimientos       Abastecimiento[]
+  ordenes               Orden[]
+  entregasRealizadas    Entrega[]
+  incidenciasCreadas    Incidencia[]
+  evidenciasIncidencia  EvidenciaIncidencia[]
+  respuestasIncidencia  RespuestaIncidencia[]
+  historialIncidencias  HistorialIncidencia[]
+
+  @@index([idRol])
+}
+
+model Categoria {
+  idCategoria   Int      @id @default(autoincrement())
+  nombre        String   @unique
+  descripcion   String?
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  productos Producto[]
+}
+
+model Producto {
+  idProducto     Int      @id @default(autoincrement())
+  idCategoria    Int
+  codigoProducto String   @unique
+  nombre         String
+  descripcion    String?
+  laboratorio    String?
+  presentacion   String?
+  precioVenta    Decimal  @db.Decimal(10, 2)
+  stockMinimo    Int
+  activo         Boolean  @default(true)
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  categoria     Categoria      @relation(fields: [idCategoria], references: [idCategoria])
+  lotes         Lote[]
+  detallesOrden DetalleOrden[]
+
+  @@index([idCategoria])
+  @@index([nombre])
+}
+
+enum EstadoLote {
+  ACTIVO
+  AGOTADO
+  BLOQUEADO
+}
+
+enum TipoMovimientoInventario {
+  ENTRADA
+  SALIDA
+  AJUSTE_ENTRADA
+  AJUSTE_SALIDA
+}
+
+model Lote {
+  idLote             Int        @id @default(autoincrement())
+  idProducto         Int
+  codigoLote         String
+  fechaIngreso       DateTime
+  fechaVencimiento   DateTime
+  cantidadInicial    Int
+  cantidadDisponible Int
+  estado             EstadoLote @default(ACTIVO)
+  creadoEn           DateTime   @default(now())
+  actualizadoEn      DateTime   @updatedAt
+
+  producto               Producto                @relation(fields: [idProducto], references: [idProducto])
+  movimientosInventario  MovimientoInventario[]
+  detallesAbastecimiento DetalleAbastecimiento[]
+
+  @@unique([idProducto, codigoLote])
+  @@index([idProducto])
+  @@index([fechaVencimiento])
+}
+
+model MovimientoInventario {
+  idMovimiento   Int                      @id @default(autoincrement())
+  idLote         Int
+  idUsuario      Int
+  tipoMovimiento TipoMovimientoInventario
+  cantidad       Int
+  motivo         String
+  referencia     String?
+  observacion    String?
+  creadoEn       DateTime                 @default(now())
+
+  lote    Lote    @relation(fields: [idLote], references: [idLote])
+  usuario Usuario @relation(fields: [idUsuario], references: [idUsuario])
+
+  @@index([idLote])
+  @@index([idUsuario])
+}
+
+model Abastecimiento {
+  idAbastecimiento    Int       @id @default(autoincrement())
+  idUsuario           Int
+  codigoScan          String    @unique
+  fechaAbastecimiento DateTime  @default(now())
+  observacion         String?
+  procesado           Boolean   @default(false)
+  procesadoEn         DateTime?
+  creadoEn            DateTime  @default(now())
+
+  usuario  Usuario                 @relation(fields: [idUsuario], references: [idUsuario])
+  detalles DetalleAbastecimiento[]
+
+  @@index([idUsuario])
+}
+
+model DetalleAbastecimiento {
+  idDetalleAbastecimiento Int @id @default(autoincrement())
+  idAbastecimiento        Int
+  idLote                  Int
+  cantidad                Int
+
+  abastecimiento Abastecimiento @relation(fields: [idAbastecimiento], references: [idAbastecimiento])
+  lote           Lote           @relation(fields: [idLote], references: [idLote])
+
+  @@index([idAbastecimiento])
+  @@index([idLote])
+}
+
+enum TipoOrden {
+  WEB
+  PRESENCIAL
+}
+
+enum EstadoOrden {
+  PENDIENTE_PAGO
+  PAGO_EN_REVISION
+  PAGADA
+  LISTA_PARA_RECOJO
+  ENTREGADA
+  CANCELADA
+  VENCIDA
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA
+}
+
+enum EstadoPago {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+  ERROR_PASARELA
+  EN_REVISION
+}
+
+enum ResultadoIntentoPago {
+  APROBADO
+  RECHAZADO
+  ERROR
+}
+
+model Orden {
+  idOrden       Int         @id @default(autoincrement())
+  idCliente     Int?
+  tipoOrden     TipoOrden
+  estado        EstadoOrden @default(PENDIENTE_PAGO)
+  subtotal      Decimal     @db.Decimal(10, 2)
+  total         Decimal     @db.Decimal(10, 2)
+  creadoEn      DateTime    @default(now())
+  actualizadoEn DateTime    @updatedAt
+
+  cliente          Usuario?          @relation(fields: [idCliente], references: [idUsuario])
+  detalles         DetalleOrden[]
+  pagos            Pago[]
+  codigosOperacion CodigoOperacion[]
+  comprobante      Comprobante?
+  entrega          Entrega?
+  incidencias      Incidencia[]
+
+  @@index([idCliente])
+  @@index([estado])
+}
+
+model DetalleOrden {
+  idDetalleOrden Int     @id @default(autoincrement())
+  idOrden        Int
+  idProducto     Int
+  cantidad       Int
+  precioUnitario Decimal @db.Decimal(10, 2)
+  subtotal       Decimal @db.Decimal(10, 2)
+
+  orden    Orden    @relation(fields: [idOrden], references: [idOrden])
+  producto Producto @relation(fields: [idProducto], references: [idProducto])
+
+  @@index([idOrden])
+  @@index([idProducto])
+}
+
+model Pago {
+  idPago        Int        @id @default(autoincrement())
+  idOrden       Int
+  metodoPago    MetodoPago
+  estado        EstadoPago @default(PENDIENTE)
+  monto         Decimal    @db.Decimal(10, 2)
+  fechaPago     DateTime?
+  creadoEn      DateTime   @default(now())
+  actualizadoEn DateTime   @updatedAt
+
+  orden    Orden         @relation(fields: [idOrden], references: [idOrden])
+  intentos IntentoPago[]
+
+  @@index([idOrden])
+}
+
+model IntentoPago {
+  idIntentoPago    Int                  @id @default(autoincrement())
+  idPago           Int
+  resultado        ResultadoIntentoPago
+  codigoRespuesta  String?
+  mensajeRespuesta String?
+  creadoEn         DateTime             @default(now())
+
+  pago Pago @relation(fields: [idPago], references: [idPago])
+
+  @@index([idPago])
+}
+
+enum TipoCodigoOperacion {
+  RECOJO_PAGO_TIENDA
+  RECOJO_PAGADO
+  REVISION_PAGO
+}
+
+enum EstadoCodigoOperacion {
+  ACTIVO
+  UTILIZADO
+  VENCIDO
+  CANCELADO
+}
+
+enum TipoComprobante {
+  BOLETA
+  FACTURA
+}
+
+enum TipoDocumento {
+  DNI
+  RUC
+}
+
+model CodigoOperacion {
+  idCodigoOperacion Int                   @id @default(autoincrement())
+  idOrden           Int
+  codigo            String                @unique
+  tipo              TipoCodigoOperacion
+  estado            EstadoCodigoOperacion @default(ACTIVO)
+  fechaGeneracion   DateTime              @default(now())
+  fechaExpiracion   DateTime
+  fechaUso          DateTime?
+  creadoEn          DateTime              @default(now())
+
+  orden Orden @relation(fields: [idOrden], references: [idOrden])
+
+  @@index([idOrden])
+  @@index([estado])
+}
+
+model Comprobante {
+  idComprobante     Int             @id @default(autoincrement())
+  idOrden           Int             @unique
+  tipoComprobante   TipoComprobante
+  tipoDocumento     TipoDocumento
+  numeroDocumento   String
+  razonSocialNombre String
+  serie             String
+  numero            String
+  fechaEmision      DateTime        @default(now())
+  total             Decimal         @db.Decimal(10, 2)
+  creadoEn          DateTime        @default(now())
+
+  orden Orden @relation(fields: [idOrden], references: [idOrden])
+
+  @@unique([serie, numero])
+}
+
+model Entrega {
+  idEntrega    Int      @id @default(autoincrement())
+  idOrden      Int      @unique
+  idVendedor   Int
+  fechaEntrega DateTime @default(now())
+  observacion  String?
+  creadoEn     DateTime @default(now())
+
+  orden    Orden   @relation(fields: [idOrden], references: [idOrden])
+  vendedor Usuario @relation(fields: [idVendedor], references: [idUsuario])
+
+  @@index([idVendedor])
+}
+
+
+
+enum TipoIncidencia {
+  ERROR_PAGO
+  CUENTA_BLOQUEADA
+  ACCESO
+  SISTEMA
+  OTRO
+}
+
+enum EstadoIncidencia {
+  PENDIENTE
+  EN_REVISION
+  RESUELTA
+  CERRADA
+}
+
+enum PrioridadIncidencia {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+model Incidencia {
+  idIncidencia   Int                 @id @default(autoincrement())
+  idCreador      Int
+  idOrden        Int?
+  tipoIncidencia TipoIncidencia
+  titulo         String
+  descripcion    String
+  estado         EstadoIncidencia    @default(PENDIENTE)
+  prioridad      PrioridadIncidencia @default(MEDIA)
+  solucionFinal  String?
+  creadoEn       DateTime            @default(now())
+  actualizadoEn  DateTime            @updatedAt
+  resueltoEn     DateTime?
+
+  creador Usuario @relation(fields: [idCreador], references: [idUsuario])
+  orden   Orden?  @relation(fields: [idOrden], references: [idOrden])
+
+  evidencias EvidenciaIncidencia[]
+  respuestas RespuestaIncidencia[]
+  historial  HistorialIncidencia[]
+
+  @@index([idCreador])
+  @@index([idOrden])
+  @@index([estado])
+  @@index([tipoIncidencia])
+}
+
+model EvidenciaIncidencia {
+  idEvidencia   Int      @id @default(autoincrement())
+  idIncidencia  Int
+  idUsuario     Int
+  nombreArchivo String
+  urlArchivo    String
+  tipoArchivo   String?
+  creadoEn      DateTime @default(now())
+
+  incidencia Incidencia @relation(fields: [idIncidencia], references: [idIncidencia])
+  usuario    Usuario    @relation(fields: [idUsuario], references: [idUsuario])
+
+  @@index([idIncidencia])
+  @@index([idUsuario])
+}
+
+model RespuestaIncidencia {
+  idRespuesta  Int      @id @default(autoincrement())
+  idIncidencia Int
+  idUsuario    Int
+  mensaje      String
+  creadoEn     DateTime @default(now())
+
+  incidencia Incidencia @relation(fields: [idIncidencia], references: [idIncidencia])
+  usuario    Usuario    @relation(fields: [idUsuario], references: [idUsuario])
+
+  @@index([idIncidencia])
+  @@index([idUsuario])
+}
+
+model HistorialIncidencia {
+  idHistorial    Int               @id @default(autoincrement())
+  idIncidencia   Int
+  idUsuario      Int
+  estadoAnterior EstadoIncidencia?
+  estadoNuevo    EstadoIncidencia
+  comentario     String?
+  creadoEn       DateTime          @default(now())
+
+  incidencia Incidencia @relation(fields: [idIncidencia], references: [idIncidencia])
+  usuario    Usuario    @relation(fields: [idUsuario], references: [idUsuario])
+
+  @@index([idIncidencia])
+  @@index([idUsuario])
+}
